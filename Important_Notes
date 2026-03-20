@@ -1,0 +1,278 @@
+Azure Login commands - 
+az account set --subscription=<subscription_id>
+az login --service-principal -u <username> -p <password> -tenant <tenantid>
+
+Delete evicted pods -
+kubectl get pod -n <namespace> | grep Evicted | awk '{print $1}' | xargs kubectl delete pod -n  <namespace>
+
+Azure KQL Queries
+Query to find error in logs
+let startTimestamp = ago(1d);
+KubePodInventory
+| where TimeGenerated > startTimestamp
+| project ContainerID, PodName=Name, PodLabel, PodLabelJson=parsejson(PodLabel)
+| where PodLabelJson[0]["app"] == "<pod_name>"
+| distinct ContainerID, PodName, PodLabel
+| join
+(
+ContainerLog
+| where TimeGenerated > startTimestamp
+)
+on ContainerID
+| project TimeGenerated, PodName, LogEntry
+| order by TimeGenerated desc
+
+
+Remove stale file from storage account - 
+az storage share close-handle --account-name <storage_account_name> --name <file_share_name> --path  '<path>' --account-key '<account_key>'  --close-all
+
+KQL query to find amount of data stored in tables
+Usage
+| where TimeGenerated > startofday(ago(31d))
+| where StartTime > startofday(ago(31d))
+| where IsBillable == true
+| summarize TotalVolumeGB = sum(Quantity) / 1024 by DataType
+| render columnchart
+
+Query for daily ingestion 
+Usage
+| where TimeGenerated > ago(7d)
+| where IsBillable == true
+| extend Timing = format_datetime(TimeGenerated,"dd-MM-yy")
+| summarize TotalVolumeGB = sum(Quantity) / 1024 by DataType , Timing
+| where DataType has "AzureDiagnostics"
+| order by TotalVolumeGB desc 
+
+
+Query for Monthly ingestion
+Usage
+| where TimeGenerated > ago(30d)
+| where IsBillable == true
+| summarize TotalVolumeGB = sum(Quantity) / 1024
+| order by TotalVolumeGB desc 
+
+
+KQL Query - Disk space usage
+InsightsMetrics
+| where Namespace has "LogicalDisk" and Name has "FreeSpaceMB" 
+| where Tags has "/opt" and Tags !has "/opt/"
+| project TimeGenerated,Computer,Namespace,Name,ValueinGB=toint(Val/1024),Tags
+| order by TimeGenerated desc 
+
+Time range filters
+| where TimeGenerated between (datetime(2023-07-13 04:00:00) .. datetime(2023-07-14 05:00:00))
+let endDateTime = (datetime(2023-07-14T05:00:00.0000000Z));
+let startDateTime = (datetime(2023-07-14T05:00:00.0000000Z) - 1h);
+
+Data Collection using Azure Monitor Agent
+Create Data Collection Endpoint --> Add log path
+Create Data Collection Rule --> Add VMs
+Documentation Link --> https://learn.microsoft.com/en-us/azure/azure-monitor/agents/data-collection-text-log?tabs=portal
+
+
+Ingestion Volume at Pod Level
+
+// let startdatetime = "2024-09-01";
+// let enddatetime = "2024-09-30";
+Usage
+| where TimeGenerated > ago(90d)
+//| where TimeGenerated  between (todatetime(startdatetime) .. todatetime(enddatetime))
+| where IsBillable == true
+| extend Timing = format_datetime(TimeGenerated,"MM-yyyy")
+| where DataType has "ContainerLog"
+| summarize TotalVolumeGB = sum(Quantity) / 1024 by DataType , Timing
+// | where DataType has "AzureDiagnostics"
+| order by TotalVolumeGB desc   
+
+
+Get ingestion volume in Container Log by Container Id -
+let startdatetime = "yyyy-mm-dd";
+let enddatetime = "yyyy-mm-dd";
+ContainerLog
+| where TimeGenerated  between (todatetime(startdatetime) .. todatetime(enddatetime))
+| extend Timing = format_datetime(TimeGenerated,"MM-yyyy") 
+| summarize sum(_BilledSize) by ContainerID,Computer,Timing
+| project TotalVolume=format_bytes(sum__BilledSize,0,"GB"),ContainerID,Computer,Timing
+| where TotalVolume != "0 GB"
+| distinct ContainerID;
+
+
+Get list of Pods against container ids found in above query list - 
+let startdatetime = "yyyy-mm-dd";
+let enddatetime = "yyyy-mm-dd";
+KubePodInventory
+| where TimeGenerated  between (todatetime(startdatetime) .. todatetime(enddatetime))
+| where ContainerID has_any (comma separated container ids)
+| distinct ContainerID,Name,ClusterName 
+
+
+Get ingestion volume in AppTraces by AppRoleName -
+let startdatetime = "yyyy-mm-dd";
+let enddatetime = "yyyy-mm-dd";
+AppDependencies
+| where TimeGenerated  between (todatetime(startdatetime) .. todatetime(enddatetime))
+| extend Timing = format_datetime(TimeGenerated,"MM-yyyy") 
+| extend ClusterName = tostring(split(_ResourceId,"/")[-1])
+| summarize sum(_BilledSize) by AppRoleName,ClusterName,Timing
+| project TotalVolume=format_bytes(sum__BilledSize,0,"GB"),AppRoleName,ClusterName ,Timing
+| where TotalVolume != "0 GB"
+
+Get ingestion volume in AppExceptions by AppRoleName -
+let startdatetime = "yyyy-mm-dd";
+let enddatetime = "yyyy-mm-dd";
+AppExceptions
+| where TimeGenerated  between (todatetime(startdatetime) .. todatetime(enddatetime))
+| extend Timing = format_datetime(TimeGenerated,"MM-yyyy") 
+| extend ClusterName = tostring(split(_ResourceId,"/")[-1])
+| summarize sum(_BilledSize) by AppRoleName,ClusterName,Timing
+| project TotalVolume=format_bytes(sum__BilledSize,0,"GB"),AppRoleName,ClusterName ,Timing
+| where TotalVolume != "0 GB
+
+Get ingestion volume in AppDependencies by AppRoleName -
+let startdatetime = "yyyy-mm-dd";
+let enddatetime = "yyyy-mm-dd";
+AppDependencies
+| where TimeGenerated  between (todatetime(startdatetime) .. todatetime(enddatetime))
+| extend Timing = format_datetime(TimeGenerated,"MM-yyyy") 
+| extend ClusterName = tostring(split(_ResourceId,"/")[-1])
+| summarize sum(_BilledSize) by AppRoleName,ClusterName,Timing
+| project TotalVolume=format_bytes(sum_BilledSize,0,"GB"),AppRoleName,ClusterName ,Timing
+| where TotalVolume != "0 GB"
+
+
+Query for getting ingestion volume in container log table at service level 
+let startdatetime = "2023-07-21";
+let enddatetime = "2023-07-22";
+let query1 = 
+ContainerLog
+| where TimeGenerated  between (todatetime(startdatetime) .. todatetime(enddatetime))
+| extend Timing = format_datetime(TimeGenerated,"MM-yyyy") 
+| summarize sum(_BilledSize) by ContainerID,Computer,Timing
+| project TotalVolume=format_bytes(sum__BilledSize,0,"GB"),ContainerID,Computer,Timing
+| where TotalVolume != "0 GB"
+| project TotalIngestionVolume=toint(replace_string(TotalVolume," GB","")),ContainerID,Computer,Timing;
+let query2=KubePodInventory
+| where TimeGenerated  between (todatetime(startdatetime) .. todatetime(enddatetime))
+| extend Timing = format_datetime(TimeGenerated,"MM-yyyy") 
+| distinct ContainerID,Name,ClusterName,ServiceName;
+query1
+| join kind=inner
+(query2) on ContainerID
+| project Timing,ContainerID,TotalIngestionVolume,Name,Computer,ClusterName,ServiceName
+| summarize sum(TotalIngestionVolume) by ServiceName,ClusterName,Timing
+| where isnotempty(ServiceName)
+
+Query for getting ingestion volume in Azure Diagnostics Table 
+AzureDiagnostics
+| where TimeGenerated > ago(30d)
+| where _ResourceId has "<name>"
+| summarize sum(_BilledSize) by Category
+| project TotalVolume=format_bytes(sum__BilledSize,5,"GB"),Category
+export my_zone=us-central1-a
+export my_cluster=standard-cluster-1
+
+
+
+
+Basic Logs Cost savings Query
+Usage
+| where IsBillable == true
+| where DataType has_any ("AppTraces","StorageFileLogs","ContainerLog","_CL")
+| summarize MonthlyIngestionVolumeinGB = toint(sum(Quantity) / 1024) by DataType,ResourceUri
+| project LogAnalyticsWorkspaceName=ResourceUri,DataType,MonthlyIngestionVolumeinGB
+| extend Current_Costing=todouble(case(LogAnalyticsWorkspaceName has "die1-rc", 2.07 , 1.25))
+| project LogAnalyticsWorkspaceName,DataType,MonthlyIngestionVolumeinGB,PerGBCostinUSD=todouble(Current_Costing)
+| extend CurrentMonthlyCostinUSD=round(todouble(MonthlyIngestionVolumeinGB*PerGBCostinUSD),2)
+| extend MonthlyCostinUSD_in_BasicLogs=round(todouble(MonthlyIngestionVolumeinGB*0.5),2)
+| extend CostSavingsinUSD=todouble(CurrentMonthlyCostinUSD - MonthlyCostinUSD_in_BasicLogs)
+| order by LogAnalyticsWorkspaceName desc
+
+
+App Insights Sampling Percentage
+resources 
+| where ['type'] contains 'microsoft.insights/components' 
+| extend extract_sampling_percentage = parse_json(properties) 
+| extend sampling_percentage = tostring(extract_sampling_percentage.SamplingPercentage)
+| join kind=inner  ( resourcecontainers | where ['type'] == 'microsoft.resources/subscriptions' 
+| where name contains 'ESG_UAT' or name contains 'ESG_Prod' or name contains 'ESG_Non-Prod' or name contains 'CarbonDelta_Non-Prod' or name contains 'DataPlatform_Non-Prod' or name contains 'DataPlatform_Prod' 
+| project SubscriptionName = name,subscriptionId) on subscriptionId 
+| project name,location,sampling_percentage,SubscriptionName
+
+
+KQL Query for listing container ids and pods that do not have logs in ContainerLog table
+let ContainerLogs = 
+    ContainerLog
+    | where _ResourceId contains "<cluster_name>"
+    | distinct ContainerID;
+let AllContainerIds = 
+    KubePodInventory
+    | where ClusterName contains "<cluster_name>"
+    | project ContainerID,PodName=Name
+    | where PodName has "esg-scr-eng"
+    | distinct ContainerID,PodName;
+AllContainerIds
+| join kind=anti ContainerLogs on ContainerID
+| where isnotempty(ContainerID)
+| distinct ContainerID,PodName
+
+
+Add owner to App registration
+Az login via SP
+az ad app owner add --id <sp_id> --owner-object-id <owner_id>
+
+OOMKilled KQL
+KubePodInventory
+| where TimeGenerated > ago(7d)
+| where ClusterName contains "<cluster_name>" //add clustername
+| where Namespace contains "<namespace_name>"
+| where ContainerRestartCount > 0
+| where parse_json(ContainerLastStatus)["reason"] == "OOMKilled"
+| project TimeGenerated, PodName=Name, ContainerID,ContainerLastStatus
+| where PodName has "ds-nlpp-entity-extraction"
+| extend Date=format_datetime(TimeGenerated,"dd-MM-yy")
+| summarize max(TimeGenerated) by PodName
+
+
+Ingestion Volume at "app" Label level
+let startdatetime = "2024-12-01";
+let enddatetime = "2024-12-31";
+let query1 = 
+ContainerLog
+| where TimeGenerated  between (todatetime(startdatetime) .. todatetime(enddatetime))
+| extend Timing = format_datetime(TimeGenerated,"MM-yyyy") 
+| summarize sum(_BilledSize) by ContainerID,Computer,Timing
+| project TotalVolume=format_bytes(sum__BilledSize,0,"GB"),ContainerID,Computer,Timing
+| where TotalVolume != "0 GB"
+| project TotalIngestionVolume=toint(replace_string(TotalVolume," GB","")),ContainerID,Computer,Timing;
+let query2=KubePodInventory
+| where TimeGenerated  between (todatetime(startdatetime) .. todatetime(enddatetime))
+| extend Timing = format_datetime(TimeGenerated,"MM-yyyy") 
+| extend PodLabelJson=parsejson(PodLabel)
+| extend AppName=tostring(PodLabelJson[0]["app"])
+| where isnotempty(AppName)
+| distinct ContainerID,Name,ClusterName,AppName;
+query1
+| join kind=inner
+(query2) on ContainerID
+| project Timing,ContainerID,TotalIngestionVolume,Name,Computer,ClusterName,AppName
+| summarize sum(TotalIngestionVolume) by AppName,ClusterName,Timing
+| where isnotempty(AppName)
+
+
+Az PowerShell Login
+$AppKey="<app_key>"
+$Password = $AppKey | ConvertTo-SecureString -AsPlainText -Force
+$AppID="<app_id>"
+$Credential = New-Object System.Management.Automation.PSCredential($AppID, $Password)
+$TenantID = "<tenant_id>"
+$SubscriptionID="<subscription_id>"
+Connect-AzAccount -Tenant $TenantID -Credential $Credential -ServicePrincipal  | Out-Null
+Select-AzSubscription $SubscriptionID -Tenant $TenantID | Out-Null
+
+
+AMA Agent enable disable on AKS cluster
+Below steps were followed to fix the issue à
+	1) Disable Azure monitor agent via Az cli : az aks disable-addons --resource-group <rg_name> --name <cluster_name> --addons monitoring
+	2) Wait for 5-10 minutes
+	3) Re enable the Azure Monitor agent via Az cli : az aks enable-addons --resource-group <rg_name> --name <cluster_name>--addons monitoring --workspace-resource-id ""
+
