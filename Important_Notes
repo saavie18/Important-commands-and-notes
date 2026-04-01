@@ -276,3 +276,13 @@ Below steps were followed to fix the issue à
 	2) Wait for 5-10 minutes
 	3) Re enable the Azure Monitor agent via Az cli : az aks enable-addons --resource-group <rg_name> --name <cluster_name>--addons monitoring --workspace-resource-id ""
 
+
+create token for SP for databricks authentication
+az login --service-principal --tenant <tenant_id> --username <sp_client_id> --password "<sp_secret>" --output table
+accessToken=$(az account get-access-token --resource  2ff814a6-3304-4ab8-85cb-cd0e6f879c1d --query "accessToken" --output tsv)  ######2ff ID is global databricks ID no need to change the resources ID 
+curl -H "Authorization: Bearer ${accessToken}" --request POST https://<databricks_url>/api/2.0/token/create --data '{ "comment": "", "lifetime_seconds": 94608000 }' ####added expiry after three years
+
+Conditions :
+1) SP should have reader access on any subscription
+2) sp should be added to workspace
+3) sp should be part of admins group
