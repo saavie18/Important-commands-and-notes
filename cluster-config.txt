@@ -1,0 +1,1 @@
+https://management.azure.com/subscriptions/<subscription_id>/providers/Microsoft.ContainerService/managedClusters?api-version=2023-07-01
