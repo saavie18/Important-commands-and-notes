@@ -1,1 +1,39 @@
 
+trigger: none
+
+pool:
+  vmImage: 'windows-latest'
+
+steps:
+
+- task: AzureKeyVault@2
+  displayName: "Fetch secrets from Key Vault"
+  inputs:
+    azureSubscription: "<subscription_name>"
+    KeyVaultName: "<keyvault_name>"
+    SecretsFilter: "MailgunAPI"
+
+- task: AzureCLI@2
+  env:
+    MAILGUN_API_KEY: $(MailgunAPI)
+  inputs:
+    azureSubscription: 'subscription_name'
+    addSpnToEnvironment: true
+    scriptType: bash
+    scriptLocation: inlineScript
+    inlineScript: |
+      echo "Logging in using SP credentials..."
+      az login --service-principal \
+        -u $servicePrincipalId \
+        -p $servicePrincipalKey \
+        --tenant $tenantId
+
+      echo "Login successful."
+      az account show
+
+      export AZURE_CLIENT_ID="$servicePrincipalId"
+      export AZURE_CLIENT_SECRET="$servicePrincipalKey"
+      export AZURE_TENANT_ID="$tenantId"
+
+      # Run the script
+      pwsh -NoProfile -NonInteractive -File "$(Build.SourcesDirectory)/<powershell script path>"
