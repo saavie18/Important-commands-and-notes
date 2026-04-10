@@ -1,0 +1,26 @@
+variables: # pipeline-level
+  TenantID: ""
+  SourceCodeDIR: "workbook_deploy_frombackup" #Directory Containing the PowerShell Script
+  AppID: '' #Service Principal ID
+  SubscriptionID: ''
+  WorkSpaceId: ''
+  PrimaryKey: ''
+
+trigger:
+- none
+
+jobs:
+- job: Deploy
+  displayName: Deploy Workbook From Backup
+  pool:
+    vmImage: ubuntu-latest
+  steps:
+  - checkout: self
+  - task: PowerShell@2
+    displayName: PowerShell Script
+    inputs:
+      targetType: filePath
+      filePath: '<ps1_file_path>'
+      arguments: '-TenantID $(TenantID) -AppID $(AppID) -AppKey $(AppKey) -SubscriptionID $(SubscriptionID) -WorkSpaceId $(WorkSpaceId) -PrimaryKey $(PrimaryKey)'
+      pwsh: true
+      workingDirectory: '<working_directory>'
